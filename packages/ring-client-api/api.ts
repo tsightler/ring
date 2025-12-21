@@ -32,7 +32,7 @@ import {
 import { clearTimeouts, enableDebug, logError, logInfo } from './util'
 import { setFfmpegPath } from './ffmpeg'
 import { Subscribed } from './subscribed'
-import PushReceiver from '@eneris/push-receiver'
+import { FcmClient, registerToFCM, generateFcmAuthSecret, createFcmECDH } from '@aracna/fcm'
 import { RingIntercom } from './ring-intercom'
 import JSONbig from 'json-bigint'
 
@@ -221,12 +221,39 @@ export class RingApi extends Subscribed {
     cameras: RingCamera[],
     intercoms: RingIntercom[]
   ) {
-    const credentials =
-        this.restClient._internalOnly_pushNotificationCredentials,
-      pushReceiver = new PushReceiver({
-        credentials,
-        logLevel: 'NONE',
-        senderId: '876313859327', // for Ring android app.  703521446232 for ring-site
+    let credentials = this.restClient._internalOnly_pushNotificationCredentials
+
+    // Register if no credentials exist
+    if (!credentials) {
+      const ecdh = createFcmECDH(),
+        authSecret = generateFcmAuthSecret(),
+        publicKey = ecdh.getPublicKey()
+
+      const registration = await registerToFCM({
+        appID: 'com.ringapp',
+        firebase: {
+          apiKey: 'AIzaSyD6xrs-VGFwaMNO6S_OD-2C4UbH0h0QXIM',
+          appID: '1:876313859327:android:d062e92425f7e4e5',
+          projectID: 'ring-2fbbc',
+        },
+        ece: {
+          authSecret,
+          publicKey,
+        },
+      })
+
+      if (registration instanceof Error) {
+        logError('Failed to register for FCM')
+        logError(registration)
+        return
+      }
+
+      credentials = registration
+      this.restClient._internalOnly_pushNotificationCredentials = credentials
+    }
+
+    const fcmClient = new FcmClient({
+        acg: credentials.acg,
       }),
       devicesById: { [id: number]: RingCamera | RingIntercom | undefined } = {},
       sendToDevice = (id: number, notification: PushNotification) => {
@@ -241,12 +268,11 @@ export class RingApi extends Subscribed {
       devicesById[intercom.id] = intercom
     }
 
-    pushReceiver.onCredentialsChanged(({ newCredentials }) => {
-      // Store the new credentials in the rest client so that it can be used for subsequent restarts
-      this.restClient._internalOnly_pushNotificationCredentials = newCredentials
-
-      // Send the new credentials to the server
-      onPushNotificationToken.next(newCredentials.fcm.token)
+    fcmClient.on('login', (login) => {
+      // FCM login event - credentials are already stored, just emit token update
+      if (credentials) {
+        onPushNotificationToken.next(credentials.token)
+      }
     })
 
     this.addSubscriptions(
@@ -276,14 +302,14 @@ export class RingApi extends Subscribed {
     )
 
     try {
-      await pushReceiver.connect()
+      await fcmClient.connect()
     } catch (e) {
       logError('Failed to connect push notification receiver')
       logError(e)
     }
 
     const startTime = Date.now()
-    pushReceiver.onNotification(({ message }) => {
+    fcmClient.on('message-data', (messageData) => {
       // Ignore messages received in the first two seconds after connecting
       // These are likely duplicates, and we aren't currently storying persistent ids anywhere to avoid re-processing them
       if (Date.now() - startTime < 2000) {
@@ -293,12 +319,11 @@ export class RingApi extends Subscribed {
         return
       }
 
-      const dataJson = message.data?.gcmData as string
-
       try {
-        const notification = JSONbig({ storeAsString: true }).parse(
-          dataJson
-        ) as PushNotification
+        const dataJson = messageData.data?.gcmData as string,
+          notification = JSONbig({ storeAsString: true }).parse(
+            dataJson
+          ) as PushNotification
 
         if ('ding' in notification) {
           sendToDevice(notification.ding.doorbot_id, notification)
@@ -313,7 +338,7 @@ export class RingApi extends Subscribed {
 
     // If we already have credentials, use them immediately
     if (credentials) {
-      onPushNotificationToken.next(credentials.fcm.token)
+      onPushNotificationToken.next(credentials.token)
     }
   }
 

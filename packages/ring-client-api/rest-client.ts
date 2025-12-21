@@ -16,7 +16,7 @@ import {
 } from './ring-types'
 import { ReplaySubject } from 'rxjs'
 import assert from 'assert'
-import type { Credentials } from '@eneris/push-receiver/dist/types'
+import type { FcmRegistration } from '@aracna/fcm'
 
 const defaultRequestOptions: RequestOptions = {
     responseType: 'json',
@@ -123,7 +123,7 @@ export interface SessionOptions {
 interface AuthConfig {
   rt: string // Refresh Token for Auth
   hid?: string // Hardware ID, to stay consistent after initial token creation
-  pnc?: Credentials // Push Notification Credentials
+  pnc?: FcmRegistration // Push Notification Credentials
 }
 
 function parseAuthConfig(rawRefreshToken?: string): AuthConfig | undefined {
@@ -494,7 +494,7 @@ export class RingRestClient {
   }
 
   set _internalOnly_pushNotificationCredentials(
-    credentials: Credentials | undefined
+    credentials: FcmRegistration | undefined
   ) {
     if (!this.refreshToken || !this.authConfig) {
       throw new Error(
