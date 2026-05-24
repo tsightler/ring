@@ -429,13 +429,21 @@ export interface LocationAddress {
 export interface UserLocation {
   address: LocationAddress
   created_at: string
-  geo_coordinates: { latitude: string; longitude: string }
+  geo_coordinates: { latitude: string | number; longitude: string | number }
   geo_service_verified: 'address_only' | string
   location_id: string
   name: string
   owner_id: number
   updated_at: string
   user_verified: boolean
+  is_owner?: boolean
+  operation_set?: string
+  entitlements?: {
+    business_command_center?: boolean
+    business_role_management?: boolean
+    vm_virtual_security_guard?: boolean
+  }
+  location_resource_id?: string
 }
 
 export interface TicketAsset {
