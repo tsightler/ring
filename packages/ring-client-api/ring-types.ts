@@ -1174,6 +1174,12 @@ export type Auth2faResponse =
       tsv_state: TwoStageVerificationState
     }
 
+export interface Auth2faVerifyResponse {
+  redirect_url: string
+  status: 'auth-completed'
+  user_id: number
+}
+
 export interface ProfileResponse {
   profile: {
     id: number
