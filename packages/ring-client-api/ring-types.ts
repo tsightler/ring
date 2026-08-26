@@ -1164,7 +1164,8 @@ export interface PushNotificationDingV2 {
     }
     event: {
       ding: {
-        id: string
+        // Absent on motion notifications, present for dings
+        id?: string
         created_at: string
         subtype: 'other_motion' | 'motion' | 'ding' | 'human' | string
         detection_type?: NotificationDetectionType
@@ -1176,7 +1177,8 @@ export interface PushNotificationDingV2 {
       riid: string
       is_sidewalk: boolean
       live_session: {
-        streaming_data_hash: string
+        // Only sent for notifications which can be answered/streamed
+        streaming_data_hash?: string
         active_streaming_profile: 'rms' | string
         default_audio_route: string
         max_duration: number

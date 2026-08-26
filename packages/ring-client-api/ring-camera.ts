@@ -215,6 +215,16 @@ export function getSearchQueryString(
   return queryString.length ? `?${queryString}` : ''
 }
 
+// Motion notifications arrive without data.event.ding.id, so fall back to
+// identifiers which are still unique per event.  Without this every motion
+// notification for a camera resolves to the same undefined id, which lets one
+// notification expire another that is still active.
+function getNotificationId(notification: PushNotificationDingV2) {
+  const { ding, riid } = notification.data.event
+
+  return ding.id ?? notification.analytics?.server_correlation_id ?? riid
+}
+
 export function cleanSnapshotUuid(uuid?: string | null) {
   if (!uuid) {
     return uuid
@@ -567,7 +577,7 @@ export class RingCamera extends Subscribed {
   private removeDingById(idToRemove: string) {
     const allActiveDings = this.activeNotifications,
       otherDings = allActiveDings.filter(
-        ({ data }) => data.event.ding.id !== idToRemove,
+        (notification) => getNotificationId(notification) !== idToRemove,
       )
 
     this.onActiveNotifications.next(otherDings)
@@ -584,11 +594,11 @@ export class RingCamera extends Subscribed {
     }
 
     const activeDings = this.activeNotifications,
-      dingId = notification.data.event.ding.id
+      dingId = getNotificationId(notification)
 
     this.onActiveNotifications.next(
       activeDings
-        .filter((d) => d.data.event.ding.id !== dingId)
+        .filter((d) => getNotificationId(d) !== dingId)
         .concat([notification]),
     )
     this.onNewNotification.next(notification)
