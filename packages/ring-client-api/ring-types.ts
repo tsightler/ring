@@ -110,6 +110,7 @@ export const RingCameraKind = {
   cocoa_floodlight: 'cocoa_floodlight',
   cocoa_spotlight: 'cocoa_spotlight', // used for the Spotlight Cam Plus (potentially other Spotlight models)
   stickup_cam_mini: 'stickup_cam_mini',
+  stickup_cam_mini_v2: 'stickup_cam_mini_v2',
   onvif_camera: 'onvif_camera',
 } as const
 // eslint-disable-next-line no-redeclare
@@ -150,6 +151,7 @@ export const RingCameraModel: { readonly [P in RingCameraKind]: string } = {
   cocoa_floodlight: 'Floodlight Cam Plus',
   cocoa_spotlight: 'Spotlight Cam Plus',
   stickup_cam_mini: 'Indoor Cam',
+  stickup_cam_mini_v2: 'Indoor Cam Gen 2',
   onvif_camera: 'ONVIF Camera',
 }
 

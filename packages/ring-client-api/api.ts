@@ -20,7 +20,6 @@ import type {
   UserLocation,
 } from './ring-types.ts'
 import {
-  ChimeModel,
   PushNotificationAction,
   RingCameraKind,
   RingDeviceType,
@@ -48,16 +47,34 @@ import { PushReceiver } from '@eneris/push-receiver'
 import { RingIntercom } from './ring-intercom.ts'
 import JSONbig from 'json-bigint'
 
-const doorbellKinds: Set<string> = new Set(
-  Object.values(RingCameraKind).filter(
-    (k) =>
-      k.startsWith('doorbot') ||
-      k.startsWith('doorbell') ||
-      k.startsWith('lpd_') ||
-      k.startsWith('jbox_') ||
-      k.startsWith('cocoa_doorbell'),
-  ),
-)
+// The device_info api returns a single flat device list, so this client has to
+// bucket the devices itself.  Kinds are matched by pattern rather than by exact
+// enum membership so that new hardware revisions (stickup_cam_mini_v2,
+// cocoa_doorbell_v4, chime_v3, ...) are still classified correctly before they
+// have been added to RingCameraKind/ChimeModel.
+const doorbellKindPattern = /^(doorbot|doorbell|lpd_|jbox_|cocoa_doorbell)/,
+  chimeKindPattern = /^chime/,
+  baseStationKindPattern = /^base_station/,
+  beamBridgeKindPattern = /^beams_bridge/,
+  intercomKindPattern = /^intercom_handset/
+
+// Last resort for a kind this client has never seen: identify a camera from the
+// shape of its payload.  These fields are only ever present on camera devices,
+// never on chimes, base stations, beam bridges or intercom handsets.
+function looksLikeCameraData(device: unknown) {
+  const { night_mode_status: nightModeStatus, settings } = device as {
+    night_mode_status?: unknown
+    settings?: Record<string, unknown>
+  }
+
+  return Boolean(
+    nightModeStatus !== undefined ||
+      (settings &&
+        (settings.motion_zones !== undefined ||
+          settings.live_view_preset_profile !== undefined ||
+          settings.motion_snooze_preset_profile !== undefined)),
+  )
+}
 
 export interface RingApiOptions extends SessionOptions {
   locationIds?: string[]
@@ -144,31 +161,46 @@ export class RingApi extends Subscribed {
         )
       }
 
-      if (doorbellKinds.has(kind)) {
-        if ((device as CameraData).owned === false) {
-          authorizedDoorbots.push(device as CameraData)
-        } else {
-          doorbots.push(device as CameraData)
-        }
-      } else if (kind in ChimeModel) {
+      // Non-camera devices are matched first so that the payload based camera
+      // fallback below can never claim one of them
+      if (chimeKindPattern.test(kind)) {
         chimes.push(device as ChimeData)
-      } else if (kind.startsWith('base_station')) {
+      } else if (baseStationKindPattern.test(kind)) {
         baseStations.push(device as BaseStation)
-      } else if (kind.startsWith('beams_bridge')) {
+      } else if (beamBridgeKindPattern.test(kind)) {
         beamBridges.push(device as BeamBridge)
-      } else if (kind === RingDeviceType.OnvifCamera) {
-        onvifCameras.push(device as OnvifCameraData)
-      } else if (
-        kind === RingDeviceType.IntercomHandsetAudio ||
-        kind === RingDeviceType.IntercomHandsetVideo
-      ) {
+      } else if (intercomKindPattern.test(kind)) {
         intercoms.push(device as IntercomHandsetData)
       } else if (kind === RingDeviceType.ThirdPartyGarageDoorOpener) {
         thirdPartyGarageDoorOpeners.push(device as ThirdPartyGarageDoorOpener)
-      } else if (kind in RingCameraKind) {
-        stickupCams.push(device as CameraData)
+      } else if (kind === RingDeviceType.OnvifCamera) {
+        onvifCameras.push(device as OnvifCameraData)
       } else {
-        unknownDevices.push(device as UnknownDevice)
+        const isDoorbell = doorbellKindPattern.test(kind),
+          isKnownCameraKind = kind in RingCameraKind
+
+        if (isDoorbell || isKnownCameraKind || looksLikeCameraData(device)) {
+          if (!isKnownCameraKind) {
+            // Still fully usable, but the model name and any kind specific
+            // behavior fall back to defaults until the kind is added
+            logInfo(
+              `Camera "${device.description}" has unknown kind "${kind}", using generic camera support`,
+            )
+          }
+
+          if (isDoorbell && (device as CameraData).owned === false) {
+            authorizedDoorbots.push(device as CameraData)
+          } else if (isDoorbell) {
+            doorbots.push(device as CameraData)
+          } else {
+            stickupCams.push(device as CameraData)
+          }
+        } else {
+          logDebug(
+            `Ignoring unsupported device "${device.description}" of kind "${kind}"`,
+          )
+          unknownDevices.push(device as UnknownDevice)
+        }
       }
     }
 
